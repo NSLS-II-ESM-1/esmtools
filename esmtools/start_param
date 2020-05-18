@@ -8,7 +8,7 @@ scan_esm = [scan_1D, scan_multi_1D, scan_2D, count]
 from esmtools import MyApp_window 
 
 #suspender_FE_photon_shutter.remove()
-RE.clear_suspenders()
+#RE.clear_suspenders()
 
 detectors = [xqem01, qem01, qem02, qem03, qem03, qem04, qem05, qem06, qem07, qem08, qem10, qem12, qem13, qem15, qem16]
 
