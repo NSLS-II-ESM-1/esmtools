@@ -303,6 +303,8 @@ class MainWindow(*uic.loadUiType(ui_path)):
             self.lineEdit_step_2.setDisabled(False)      
     
     def update_status(self):
+        #if 1==1:
+        #    return
         
         self.lineEdit_Iring.setText( str("{:.2f}".format(self.BeamSource.Current.value)) )
         self.lineEdit_Source_X.setText( str("{:.4f}".format(self.BeamSource.Xoffset.value)) )

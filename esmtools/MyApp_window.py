@@ -2,12 +2,16 @@ from PyQt5 import QtWidgets,  QtCore,  QtGui ,  uic,  Qt
 from PyQt5.QtWidgets import QTableWidgetItem
 import pkg_resources
 import sys
+from bluesky.plans import count
+import signal
 
 from ui_dialog import Ui_dlg_win
 from functools import partial
 
 ui_path = pkg_resources.resource_filename('esmtools', 'ui/elio_gui_4.ui')
 
+class WorkerSignals(QtCore.QObject):
+    trigger = QtCore.pyqtSignal(object, list)
 
 class Worker(QtCore.QRunnable):
     '''
@@ -23,12 +27,15 @@ class Worker(QtCore.QRunnable):
 
     '''
 
+    signals = WorkerSignals()
+
     def __init__(self, fn, *args, **kwargs):
         super(Worker, self).__init__()
         # Store constructor arguments (re-used for processing)
         self.fn = fn
         self.args = args
         self.kwargs = kwargs
+        #self.signals = WorkerSignals()
 
     @QtCore.pyqtSlot()
     def run(self):
@@ -36,6 +43,7 @@ class Worker(QtCore.QRunnable):
         Initialise the runner function with passed args, kwargs.
         '''
         self.fn(*self.args, **self.kwargs)
+        #self.signals.trigger.emit()
 
 
         
@@ -46,16 +54,20 @@ class Worker(QtCore.QRunnable):
 
 
 class MainWindow(*uic.loadUiType(ui_path)):
-    def __init__(self, db=None,  RE=None, print_summary=None, scan_time=None,  scan_esm=None, motors = None,  Beamline=None,\
+
+    def __init__(self, db=None,  RE=None, print_summary=None, scan_time=None,  scan_esm=None, motors = None, detectors=None,  Beamline=None,\
                             BeamSource=None, Eph=None,   *args,  **kwargs):
         super().__init__(*args,  **kwargs)
         self.setupUi(self)
+
         
         self.db = db
         self.RE = RE
+        self.detectors = detectors
         self.print_summary = print_summary
         self.scan_time = scan_time
         self.scan_esm= scan_esm
+        self.count= scan_esm[3]
         self.motors = motors
         self.Beamline = Beamline
         self.BeamSource = BeamSource
@@ -84,6 +96,7 @@ class MainWindow(*uic.loadUiType(ui_path)):
     
         self.pushButton_PGM_set.clicked.connect(self.move_PGM)    
         self.pushButton_startscan.clicked.connect(self.start_scan)
+        self.pushButton_abort.clicked.connect(self.abort)
         self.comboBox_scan.activated.connect(self.scan_changed)
         self.timer_update_time = QtCore.QTimer(self)
         self.timer_update_time.setInterval(500)
@@ -160,6 +173,11 @@ class MainWindow(*uic.loadUiType(ui_path)):
         self.tableWidget_data.cellClicked.connect(self.scan_selected)
         self.dateEdit_start.dateChanged.connect(self.start_datechanged)
         self.dateEdit_end.dateChanged.connect(self.end_datechanged)
+
+        #self.timer = QTimer()
+        #self.timer.setInterval(1000)
+        #self.timer.timeout.connect(self.recurring_timer)
+        #self.timer.start()
 
     def end_datechanged(self, qdate):
         self.until_date = str(qdate.year())+'-'+\
@@ -303,8 +321,21 @@ class MainWindow(*uic.loadUiType(ui_path)):
         
         
     def start_scan(self):
-        worker = Worker(self.func_scan)
-        self.threadpool.start(worker)
+        self.func_scan()
+
+    def abort(self):
+        self.RE.abort()
+
+    def get_detector_by_name(self, name):
+        for det in self.detectors:
+            if det.name==name:
+                return det
+        return None
+
+    def hint_channel(self, det, ch):
+        for i in range(1,5):
+            getattr(det, "current" + str(i)).mean_value.kind = "normal"
+        getattr(det, "current" + ch).mean_value.kind = "hinted"
 
     def func_scan(self):
         m =  self.comboBox_motor.currentText()
@@ -314,16 +345,42 @@ class MainWindow(*uic.loadUiType(ui_path)):
         idx_sc =  scn_nm_ls.index(self.comboBox_scan.currentText())
             
         if self.comboBox_scan.currentText() == 'scan_1D':         ### only one motor ###
-            self.print_summary(self.scan_esm[idx_sc](\
+            #self.print_summary(self.scan_esm[idx_sc](\
+            #                                                                self.comboBox_detector.currentText()+'@'+self.comboBox_ch.currentText(),\
+            #                                                                self.mtr_dict[m],  float(self.lineEdit_start.text()), float(self.lineEdit_stop.text()), float(self.lineEdit_step.text()) ))
+            plan = self.scan_esm[idx_sc](\
                                                                             self.comboBox_detector.currentText()+'@'+self.comboBox_ch.currentText(),\
-                                                                            self.mtr_dict[m],  float(self.lineEdit_start.text()), float(self.lineEdit_stop.text()), float(self.lineEdit_step.text()) ))
+                                                                            self.mtr_dict[m],  float(self.lineEdit_start.text()), float(self.lineEdit_stop.text()), float(self.lineEdit_step.text()) )
+            params = [plan]
 
+        elif self.comboBox_scan.currentText() == 'count':         ### no motor ###
+            num = int(self.lineEdit_stop.text()) - int(self.lineEdit_start.text())
+            det_name = self.comboBox_detector.currentText()
+            channel = self.comboBox_ch.currentText()
+            det = self.get_detector_by_name(det_name)
+            self.hint_channel(det, channel)
+            plan = self.count([det], num=num)
+            params = [plan]
         else:                                                                                   ### two motors ###
-            self.print_summary(self.scan_esm[idx_sc](\
+            #self.print_summary(self.scan_esm[idx_sc](\
+            #                                 self.comboBox_detector.currentText()+'@'+self.comboBox_ch.currentText(),\
+            #                                 self.mtr_dict[m],  float(self.lineEdit_start.text()), float(self.lineEdit_stop.text()), float(self.lineEdit_step.text()) ,\
+
+            #                                 self.mtr_dict[m1],  float(self.lineEdit_start_2.text()), float(self.lineEdit_stop_2.text()), float(self.lineEdit_step_2.text()) ))
+            plan = self.scan_esm[idx_sc](\
                                              self.comboBox_detector.currentText()+'@'+self.comboBox_ch.currentText(),\
                                              self.mtr_dict[m],  float(self.lineEdit_start.text()), float(self.lineEdit_stop.text()), float(self.lineEdit_step.text()) ,\
 
-                                             self.mtr_dict[m1],  float(self.lineEdit_start_2.text()), float(self.lineEdit_stop_2.text()), float(self.lineEdit_step_2.text()) ))
+                                             self.mtr_dict[m1],  float(self.lineEdit_start_2.text()), float(self.lineEdit_stop_2.text()), float(self.lineEdit_step_2.text()) )
+            params = [plan]
+
+        if self.checkBox_re.isChecked():
+            func = self.RE
+        else:
+            func = self.print_summary
+
+        #print(dir(self.checkBox_re))
+        Worker.signals.trigger.emit(func, params)
 
     def move_PGM(self):
         worker = Worker(self.func_PGM)
@@ -354,7 +411,6 @@ class MainWindow(*uic.loadUiType(ui_path)):
             self.lineEdit_step_2.setDisabled(False)      
     
     def update_status(self):
-        
         self.lineEdit_Iring.setText( str("{:.2f}".format(self.BeamSource.Current.value)) )
         self.lineEdit_Source_X.setText( str("{:.4f}".format(self.BeamSource.Xoffset.value)) )
         self.lineEdit_Source_Y.setText( str("{:.4f}".format(self.BeamSource.Yoffset.value)) )
@@ -408,15 +464,42 @@ class MainWindow(*uic.loadUiType(ui_path)):
 
 
 
-def main (db=None,  RE=None, print_summary=None, scan_time=None,  scan_esm=None, motors = None,  Beamline = None,  BeamSource=None,  Eph=None):
+def main (db=None,  RE=None, print_summary=None, scan_time=None,  scan_esm=None, motors = None, detectors=None,  Beamline = None,  BeamSource=None,  Eph=None):
 
+    RE.context_managers=[]
     app = QtWidgets.QApplication(sys.argv)
-    wd = MainWindow(db=db,  RE=RE, print_summary=print_summary, scan_time=scan_time,  scan_esm=scan_esm, motors = motors,  Beamline=Beamline, \
+    wd = MainWindow(db=db,  RE=RE, print_summary=print_summary, scan_time=scan_time,  scan_esm=scan_esm, motors = motors, detectors=detectors, Beamline=Beamline, \
                                         BeamSource=BeamSource,  Eph=Eph)   
-    wd.show()
-    sys.exit(app.exec_())
 
-if __name__ == '__main__':
-    main()
+    
+    worker = Worker(wd.show)
+
+    def call_func(func, params):
+        func(*params)
+
+    worker.signals.trigger.connect(call_func)
+
+    threadpool = QtCore.QThreadPool()
+    threadpool.start(worker)
+    #wd.show()
+    #sys.exit(app.exec_())
+    app.exec_()
+
+def get_detector_by_name(name, detectors):
+    for det in detectors:
+        if det.name==name:
+            return det
+    return None
+
+
+
+#def main (db=None,  RE=None, print_summary=None, scan_time=None,  scan_esm=None, motors = None, detectors=None,  Beamline = None,  BeamSource=None,  Eph=None):
+#    RE.context_managers=[]
+#    main2(db,RE,print_summary,scan_time,scan_esm,motors,detectors,Beamline,BeamSource,Eph)
+
+
+
+#if __name__ == '__main__':
+#    main()
     
 #  ['photon_energy', "grating='800'", "branch='A'", "EPU='57'", "LP='LH'", "c='constant'", "shutter='close'"]

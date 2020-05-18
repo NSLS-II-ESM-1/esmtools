@@ -5,17 +5,13 @@ BTA2diag.trans, BTB2diag.trans, M4A.HFM_X, M4A.HFM_Z,  M4A.VFM_Y, M4A.VFM_Z, LT.
 
 scan_esm = [scan_1D, scan_multi_1D, scan_2D, count]
 
-from esmtools_alex import MyApp_window 
+from esmtools import MyApp_window 
 
-#suspender_FE_photon_shutter.remove()
-RE.clear_suspenders()
+suspender_FE_photon_shutter.remove()
 
-detectors = [xqem01, qem01, qem02, qem03, qem03, qem04, qem05, qem06, qem07, qem08, qem10, qem12, qem13, qem15, qem16]
+detectors = [qem01]
 
 MyApp_window.main(db=db, RE=RE, print_summary=print_summary, scan_time=None,  scan_esm=scan_esm, motors =bmln, detectors=detectors, Beamline=Beamline, BeamSource = BeamSource, Eph=Eph)       
 #esm_lv = MyApp_window.main(db=db, RE=RE, print_summary=print_summary, scan_time=None,  scan_esm=scan_esm, motors =bmln, detectors=detectors, Beamline=Beamline, BeamSource = BeamSource, Eph=Eph)       
 
-
-
-
-#MyApp_window.main(db=db, RE=RE, print_summary=print_summary, scan_time=None,  scan_esm=scan_esm, motors =bmln, detectors=detectors, Beamline=Beamline, BeamSource = BeamSource,  Eph=Eph) 
+MyApp_window.main(db=db, RE=RE, print_summary=print_summary, scan_time=None,  scan_esm=scan_esm, motors =bmln, detectors=detectors, Beamline=Beamline, BeamSource = BeamSource,  Eph=Eph) 
